@@ -236,10 +236,14 @@ async function analyzeWithGemini(urls: string[], apiKey: string): Promise<SkyCon
   }
 }
 
-// ── Public API (cached per location for 10 minutes) ──
-
+// ── Public API (cached per location) ──
+// 30-min cache: the collector runs every 3 min 24/7, so a short TTL would burn
+// the free Gemini quota (~144 calls/day). At 30 min it's ~48/day — well within
+// the free tier — and the UI + collector share this cache. Sky is a supporting
+// signal (the forecast's minutely/hourly data drives timing), so 30-min-old
+// sky is fine; when the quota resets the next cache miss retries Gemini.
 const cache = new Map<string, { at: number; result: SkyConditions }>();
-const TTL_MS = 10 * 60 * 1000;
+const TTL_MS = 30 * 60 * 1000;
 
 export async function analyzeSky(opts: {
   lat: number;
