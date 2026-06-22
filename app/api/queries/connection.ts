@@ -2,14 +2,11 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import path from "path";
 import fs from "fs";
-import { fileURLToPath } from "url";
 import { env } from "../lib/env";
 import * as schema from "@db/schema";
 import * as relations from "@db/relations";
 
 const fullSchema = { ...schema, ...relations };
-
-const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 function resolveDbPath(): string {
   const url = env.databaseUrl || "file:./data/rain.db";
@@ -19,7 +16,10 @@ function resolveDbPath(): string {
     );
   }
   const relative = url.slice(5);
-  return path.isAbsolute(relative) ? relative : path.resolve(appRoot, relative);
+  // Resolve relative paths against the working directory (the `app/` folder for
+  // both `vite` dev and `node dist/boot.js` prod) — NOT the bundle's own
+  // location, which sits in app/dist/ and resolved one level too high.
+  return path.isAbsolute(relative) ? relative : path.resolve(process.cwd(), relative);
 }
 
 let instance: ReturnType<typeof drizzle<typeof fullSchema>>;
