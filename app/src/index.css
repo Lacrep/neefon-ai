@@ -1,0 +1,199 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 205 56% 98%;      /* #f7fafd */
+    --foreground: 200 8% 11%;       /* #181c1e */
+    --card: 0 0% 100%;
+    --card-foreground: 200 8% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 200 8% 11%;
+    --primary: 207 100% 35%;        /* #005eb2 */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 200 8% 11%;
+    --muted: 210 30% 95%;
+    --muted-foreground: 215 14% 34%;
+    --accent: 207 100% 35%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 75% 42%;       /* #ba1a1a */
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 22% 92%;
+    --input: 214 22% 90%;
+    --ring: 207 100% 35%;
+    --radius: 1rem;
+    --sidebar: 218 100% 4%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 207 100% 35%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 213 100% 12%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 213 100% 12%;
+    --sidebar-ring: 207 100% 35%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'IBM Plex Sans Thai', 'Outfit', system-ui, sans-serif;
+    font-weight: 400;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', 'IBM Plex Sans Thai', system-ui, sans-serif;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+  }
+}
+
+/* ── Page background (light) ── */
+.bg-animated {
+  background: #f7fafd;
+}
+
+/* ── Card (Material 3 elevated surface) ── */
+.glass-card {
+  background: #ffffff;
+  border: 1px solid #eef1f4;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 31, 63, 0.05);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.glass-card:hover {
+  box-shadow: 0 6px 24px rgba(0, 31, 63, 0.09);
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Status dots ── */
+.status-online {
+  background: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.status-offline {
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
+}
+
+.status-warning {
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
+
+/* ── Scrollbar (light) ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c4c6cf;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #74777f;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── Drop Animation ── */
+@keyframes drop-fall {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  80% { transform: translateY(10px) scale(0.8); opacity: 0.6; }
+  100% { transform: translateY(14px) scale(0); opacity: 0; }
+}
+
+.drop-anim {
+  animation: drop-fall 1.2s ease-in infinite;
+}
+
+/* ── Hourly Items (light) ── */
+.hourly-item {
+  min-width: 80px;
+  padding: 12px 8px;
+  border-radius: 12px;
+  background: #f1f4f7;
+  transition: all 0.25s ease;
+  text-align: center;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.hourly-item:hover {
+  transform: translateY(-3px);
+  background: #e5e8eb;
+}
+
+.hourly-item.rain {
+  background: #ffdad6;
+}
+
+.hourly-item.now {
+  background: #005eb2;
+  color: #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 94, 178, 0.3);
+}
+
+/* ── Webcam Card (light) ── */
+.webcam-card {
+  border-radius: 12px;
+  background: #ebeef1;
+  border: 1px solid #eef1f4;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+}
+
+.webcam-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 31, 63, 0.1);
+  transform: translateY(-3px);
+}
+
+/* ── Log Row ── */
+.log-row:hover {
+  background: #f1f4f7;
+}
+
+/* ── Fullscreen for Windy ── */
+#windyCard:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  padding: 0;
+  border-radius: 0;
+}
+
+#windyCard:fullscreen #windyContainer {
+  min-height: 100vh;
+  border-radius: 0;
+}
+
+#windyCard:fullscreen #windyContainer iframe {
+  border-radius: 0;
+  min-height: 100vh;
+}

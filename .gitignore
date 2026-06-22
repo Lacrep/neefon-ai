@@ -1,0 +1,30 @@
+# Dependencies / build / database — never commit
+**/node_modules/
+**/dist/
+**/dist-ssr/
+**/build/
+**/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets / environment
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Editor / local tooling
+.claude/
+.cursor/
+.vscode/
+.idea/
+.DS_Store
+*.suo
+*.sw?
+
+# Misc
+*.log
+npm-debug.log*
+*.tsbuildinfo
+coverage/
+.nyc_output/
