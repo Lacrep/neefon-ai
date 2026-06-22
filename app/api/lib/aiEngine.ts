@@ -41,8 +41,22 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
 //  Utility: Thai-style clock time, e.g. "18.43"
 // ─────────────────────────────────────────
 
+// The app targets Thailand (UTC+7). Derive wall-clock parts in that zone no
+// matter the server's timezone — the production VM runs in UTC, which would
+// otherwise push every predicted time (and the hour-of-day logic) 7 hours off.
+function thaiParts(d: Date): { hour: number; minute: number; month: number } {
+  const t = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+  return { hour: t.getUTCHours(), minute: t.getUTCMinutes(), month: t.getUTCMonth() + 1 };
+}
+
+// Calendar date (YYYY-MM-DD) in Thailand time, for daily-stats bucketing.
+function thaiDateStr(d: Date): string {
+  return new Date(d.getTime() + 7 * 60 * 60 * 1000).toISOString().split("T")[0];
+}
+
 function formatClockTime(d: Date): string {
-  return `${String(d.getHours()).padStart(2, "0")}.${String(d.getMinutes()).padStart(2, "0")}`;
+  const { hour, minute } = thaiParts(d);
+  return `${String(hour).padStart(2, "0")}.${String(minute).padStart(2, "0")}`;
 }
 
 // ─────────────────────────────────────────
@@ -125,8 +139,7 @@ async function calculatePatternSignal(
 ): Promise<SignalResult> {
   const db = getDb();
   const now = new Date();
-  const hourOfDay = now.getHours();
-  const month = now.getMonth() + 1;
+  const { hour: hourOfDay, month } = thaiParts(now);
 
   try {
     // Find similar patterns within tolerance
@@ -300,8 +313,7 @@ async function calculateRateOfChangeSignal(
 
 function calculateClimateSignal(current: CurrentWeather): SignalResult {
   const now = new Date();
-  const hour = now.getHours();
-  const month = now.getMonth() + 1; // 1-12
+  const { hour, month } = thaiParts(now); // Thailand wall-clock (UTC+7)
   const humidity = current.humidity ?? 0;
   const clouds = current.clouds ?? 0;
 
@@ -980,7 +992,7 @@ export async function validatePredictions(location: { lat: number; lon: number }
     if (evaluated === 0) return { validated: 0, accuracy: 0 };
 
     // Update daily stats
-    const today = new Date().toISOString().split("T")[0];
+    const today = thaiDateStr(new Date());
     const existing = await db
       .select()
       .from(dailyStats)
@@ -1046,8 +1058,8 @@ async function storeRainPattern(
       windSpeed: current.windSpeed != null ? String(current.windSpeed) : null,
       windDeg: current.windDeg,
       pop: current.pop != null ? String(current.pop) : null,
-      hourOfDay: now.getHours(),
-      month: now.getMonth() + 1,
+      hourOfDay: thaiParts(now).hour,
+      month: thaiParts(now).month,
       timeToRain: prediction.aiTimeToRain ?? 30,
       rainIntensity: current.rain1h != null ? String(current.rain1h) : "0",
       lat: String(location.lat),
@@ -1071,7 +1083,7 @@ export async function getAccuracyStats(days: number = 7) {
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      dates.push(d.toISOString().split("T")[0]);
+      dates.push(thaiDateStr(d));
     }
 
     const stats = await db
