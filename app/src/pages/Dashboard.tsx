@@ -4,6 +4,7 @@ import HeaderBar from "@/components/HeaderBar";
 import AIPredictionHero from "@/components/AIPredictionHero";
 import WeatherHero from "@/components/WeatherHero";
 import QuickMetrics from "@/components/QuickMetrics";
+import PrecipNowcast from "@/components/PrecipNowcast";
 import AirQualityCard from "@/components/AirQualityCard";
 import HourlyForecast from "@/components/HourlyForecast";
 import WindyMap from "@/components/WindyMap";
@@ -30,6 +31,9 @@ export default function Dashboard() {
           {/* AI Prediction Hero + Current Temperature */}
           <AIPredictionHero />
           <WeatherHero />
+
+          {/* Minute-level rain radar (next 2h) */}
+          <PrecipNowcast />
 
           {/* Weather metrics */}
           <QuickMetrics />

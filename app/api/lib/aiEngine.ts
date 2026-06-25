@@ -1,7 +1,7 @@
 import { eq, and, gte, lte, desc, isNotNull } from "drizzle-orm";
 import { getDb } from "../queries/connection";
 import { weatherReadings, rainPatterns, dailyStats, userSettings } from "@db/schema";
-import type { CurrentWeather, HourlyForecast, MinutelyData, TomorrowInterval, SkyConditions, AIPrediction, AISignal, AirQuality } from "@contracts/weather";
+import type { CurrentWeather, HourlyForecast, MinutelyData, TomorrowInterval, SkyConditions, AIPrediction, AISignal, AirQuality, PrecipNowcast, PrecipPoint, Intensity } from "@contracts/weather";
 
 // ─────────────────────────────────────────
 //  Types
@@ -57,6 +57,115 @@ function thaiDateStr(d: Date): string {
 function formatClockTime(d: Date): string {
   const { hour, minute } = thaiParts(d);
   return `${String(hour).padStart(2, "0")}.${String(minute).padStart(2, "0")}`;
+}
+
+// ─────────────────────────────────────────
+//  Minute-level precipitation nowcast (Rainbow-style 2h timeline)
+// ─────────────────────────────────────────
+
+const INTENSITY_ORDER: Intensity[] = ["none", "light", "moderate", "heavy", "violent"];
+const INTENSITY_TH: Record<Intensity, string> = {
+  none: "ไม่มีฝน",
+  light: "ฝนเบา",
+  moderate: "ฝนปานกลาง",
+  heavy: "ฝนหนัก",
+  violent: "ฝนหนักมาก",
+};
+
+// Standard meteorological rain rates (mm/h).
+function rateToIntensity(mmPerHr: number): Intensity {
+  if (mmPerHr < 0.1) return "none";
+  if (mmPerHr < 2.5) return "light";
+  if (mmPerHr < 7.6) return "moderate";
+  if (mmPerHr < 50) return "heavy";
+  return "violent";
+}
+
+// Build a 2h minute-level rain timeline (onset / duration / stop / intensity)
+// from whatever minute-level precip feed we have (Open-Meteo's 15-min steps).
+function buildPrecipNowcast(minutely: MinutelyData[], currentRainMm: number, now: number): PrecipNowcast {
+  const empty: PrecipNowcast = {
+    available: false, stepMinutes: 15, horizonMinutes: 0, isRainingNow: false,
+    startsInMin: -1, stopsInMin: -1, durationMin: 0,
+    currentIntensity: "none", peakIntensity: "none", headline: "", points: [], source: "none",
+  };
+  if (!minutely.length) return empty;
+
+  const sorted = [...minutely].sort((a, b) => a.dt - b.dt);
+  const stepMin = sorted.length > 1 ? Math.max(1, Math.round((sorted[1].dt - sorted[0].dt) / 60)) : 15;
+  const perHr = 60 / stepMin;
+
+  const points: PrecipPoint[] = sorted
+    .map((m) => {
+      const t = Math.round((m.dt * 1000 - now) / 60000);
+      const mm = Math.max(0, m.precipitation ?? 0);
+      const mmPerHr = Math.round(mm * perHr * 10) / 10;
+      return { t, mm: Math.round(mm * 100) / 100, mmPerHr, intensity: rateToIntensity(mmPerHr) };
+    })
+    .filter((p) => p.t >= -stepMin); // keep the current step + everything ahead
+  if (!points.length) return empty;
+
+  const horizonMinutes = points[points.length - 1].t + stepMin;
+  const isRainingNow = currentRainMm > 0.1 || (points[0].t <= 0 && points[0].intensity !== "none");
+
+  let startsInMin = -1;
+  if (isRainingNow) startsInMin = 0;
+  else {
+    const first = points.find((p) => p.t >= 0 && p.intensity !== "none");
+    if (first) startsInMin = first.t;
+  }
+
+  let stopsInMin = -1;
+  let peakIntensity: Intensity = "none";
+  if (startsInMin >= 0) {
+    let inRain = false;
+    for (const p of points) {
+      if (p.t < startsInMin && !isRainingNow) continue;
+      if (p.intensity !== "none") {
+        inRain = true;
+        if (INTENSITY_ORDER.indexOf(p.intensity) > INTENSITY_ORDER.indexOf(peakIntensity)) peakIntensity = p.intensity;
+      } else if (inRain) {
+        stopsInMin = p.t; // first dry step after rain began
+        break;
+      }
+    }
+  }
+  const startAnchor = Math.max(0, startsInMin);
+  const durationMin = startsInMin < 0 ? 0 : stopsInMin >= 0 ? stopsInMin - startAnchor : horizonMinutes - startAnchor;
+  const currentIntensity: Intensity = isRainingNow ? (points[0].intensity === "none" ? "light" : points[0].intensity) : "none";
+
+  // ── Ready-to-show Thai headline ──
+  const horizonPhrase =
+    horizonMinutes >= 120 ? "2 ชั่วโมงข้างหน้า" : horizonMinutes >= 60 ? "1 ชั่วโมงข้างหน้า" : `${horizonMinutes} นาทีข้างหน้า`;
+  let headline: string;
+  if (startsInMin < 0) {
+    headline = `ไม่มีฝนใน ${horizonPhrase} ☀️`;
+  } else if (isRainingNow) {
+    const lvl = INTENSITY_TH[currentIntensity];
+    headline =
+      stopsInMin >= 0
+        ? `🌧️ ${lvl}กำลังตก · จะหยุดในอีก ~${stopsInMin} นาที`
+        : `🌧️ ${lvl}กำลังตก · ตกต่อเนื่องเกิน ${horizonMinutes} นาที`;
+  } else {
+    const lvl = INTENSITY_TH[peakIntensity];
+    const dur = stopsInMin >= 0 ? ` · ตกประมาณ ${durationMin} นาที` : ` · ตกยาวเกิน ${horizonMinutes - startsInMin} นาที`;
+    headline = `🌧️ ${lvl}จะเริ่มในอีก ~${startsInMin} นาที${dur}`;
+  }
+
+  return {
+    available: true,
+    stepMinutes: stepMin,
+    horizonMinutes,
+    isRainingNow,
+    startsInMin,
+    stopsInMin,
+    durationMin,
+    currentIntensity,
+    peakIntensity,
+    headline,
+    points,
+    source: stepMin <= 5 ? "OWM" : "Open-Meteo",
+  };
 }
 
 // ─────────────────────────────────────────
@@ -578,6 +687,11 @@ export async function runAIPrediction(
   const minutely = opts?.minutely ?? [];
   const tmrIntervals = opts?.tmrIntervals ?? [];
 
+  // Minute-level precip timeline — prefer the feed that actually has data
+  // (OWM minutely is empty without One Call 3.0, so this is usually Open-Meteo).
+  const precipMinutely = minutely.length > 0 ? minutely : opts?.openMeteo?.minutely ?? [];
+  const precipNowcast = buildPrecipNowcast(precipMinutely, current.rain1h ?? 0, Date.now());
+
   // Get settings for threshold
   let threshold = 0.55;
   let weights = opts?.customWeights;
@@ -619,6 +733,7 @@ export async function runAIPrediction(
         { name: "Current Rain Detected", predictedMinutes: 0, confidence: 0.95, weight: 1, active: true },
       ],
       recommendation: "🌧️ ฝนกำลังตกอยู่แล้ว! กลับอาคารด่วน!",
+      precipNowcast: precipNowcast.available ? precipNowcast : undefined,
     };
   }
 
@@ -833,6 +948,7 @@ export async function runAIPrediction(
     signals,
     recommendation,
     sky: sky?.available ? sky : undefined,
+    precipNowcast: precipNowcast.available ? precipNowcast : undefined,
   };
 }
 

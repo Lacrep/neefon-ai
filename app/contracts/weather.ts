@@ -81,6 +81,31 @@ export const SkyConditionsSchema = z.object({
   sampleCount: z.number(),
 });
 
+// ── Minute-level precipitation nowcast (Rainbow-style 2h timeline) ──
+export const IntensityEnum = z.enum(["none", "light", "moderate", "heavy", "violent"]);
+
+export const PrecipPointSchema = z.object({
+  t: z.number(),         // minutes from now (step start)
+  mm: z.number(),        // precipitation in that step (mm)
+  mmPerHr: z.number(),   // intensity rate (mm/h)
+  intensity: IntensityEnum,
+});
+
+export const PrecipNowcastSchema = z.object({
+  available: z.boolean(),
+  stepMinutes: z.number(),       // resolution of each point (e.g. 15)
+  horizonMinutes: z.number(),    // how far ahead the timeline reaches
+  isRainingNow: z.boolean(),
+  startsInMin: z.number(),       // -1 = no rain in window, 0 = now/already raining
+  stopsInMin: z.number(),        // -1 = rain continues beyond the window
+  durationMin: z.number(),       // length of the upcoming/current rain episode
+  currentIntensity: IntensityEnum,
+  peakIntensity: IntensityEnum,
+  headline: z.string(),          // ready-to-show Thai summary
+  points: z.array(PrecipPointSchema),
+  source: z.string(),
+});
+
 export const AIPredictionSchema = z.object({
   willRain: z.boolean(),
   isRainingNow: z.boolean().default(false), // rain actually observed NOW (rain gauge / webcam), not a forecast
@@ -94,6 +119,7 @@ export const AIPredictionSchema = z.object({
   signals: z.array(AISignalSchema),
   recommendation: z.string(),
   sky: SkyConditionsSchema.optional(), // nearby webcam sky analysis
+  precipNowcast: PrecipNowcastSchema.optional(), // minute-level 2h rain timeline
 });
 
 export const WeatherReadingInputSchema = z.object({
@@ -156,6 +182,9 @@ export type TomorrowInterval = z.infer<typeof TomorrowIntervalSchema>;
 export type AISignal = z.infer<typeof AISignalSchema>;
 export type SkyConditions = z.infer<typeof SkyConditionsSchema>;
 export type AirQuality = z.infer<typeof AirQualitySchema>;
+export type PrecipNowcast = z.infer<typeof PrecipNowcastSchema>;
+export type PrecipPoint = z.infer<typeof PrecipPointSchema>;
+export type Intensity = z.infer<typeof IntensityEnum>;
 export type AIPrediction = z.infer<typeof AIPredictionSchema>;
 export type WeatherReadingInput = z.infer<typeof WeatherReadingInputSchema>;
 export type SettingsInput = z.infer<typeof SettingsInputSchema>;
