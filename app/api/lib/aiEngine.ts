@@ -867,7 +867,27 @@ export async function runAIPrediction(
   if (!nowcast.hasMinutely && timeToRain > 60 && nowcast.sources <= 1 && !(sky?.isRaining)) {
     effectiveThreshold = Math.max(threshold, 0.65);
   }
-  const willRain = rainProb >= effectiveThreshold;
+  let willRain = rainProb >= effectiveThreshold;
+
+  // ── Nowcast-led warning gate (Rainbow-style: only warn when confident) ──────
+  // The minute-level precip feed is the ground truth for the near term. It
+  // PROMOTES a confident warning when it actually detects rain approaching, and
+  // CANCELS a forecast warning that falls inside its window while it reads dry —
+  // killing the "it warned but no rain came" false alarms the user reported.
+  if (precipNowcast.available) {
+    if (precipNowcast.isRainingNow || precipNowcast.startsInMin >= 0) {
+      willRain = true;
+      timeToRain = precipNowcast.isRainingNow ? 0 : precipNowcast.startsInMin;
+      rainProb = Math.max(rainProb, 0.9);
+    } else if (timeToRain <= precipNowcast.horizonMinutes) {
+      // Forecast wanted to warn within the window the minute feed says is dry.
+      willRain = false;
+    }
+  }
+
+  // No speculative clock times: only show a predicted time when we are actually
+  // warning. (Removes the "คาดว่าฝนอาจตกตอน HH:MM" guesses the user found noisy.)
+  if (!willRain) timeToRain = 999;
 
   // ── Verdict confidence: how sure we are of the rain / no-rain call ──
   let confidence: number;
@@ -937,7 +957,7 @@ export async function runAIPrediction(
     willRain,
     // "Raining now" requires real observation (webcam sky vision actually sees
     // rain) — NOT just a forecast whose would-be time rounded to 0 minutes.
-    isRainingNow: sky?.isRaining === true,
+    isRainingNow: sky?.isRaining === true || precipNowcast.isRainingNow,
     predictedStartTime,
     predictedStartTimestamp: predictedStart,
     timeToRainMinutes: timeToRain,
@@ -1253,6 +1273,42 @@ export async function getAccuracyStats(days: number = 7) {
 // ─────────────────────────────────────────
 //  Get prediction history
 // ─────────────────────────────────────────
+
+// Full weather-readings export as CSV (all history, or the last N days) — for
+// offline accuracy analysis. The in-app log only shows the latest ~50 rows.
+function csvCell(v: unknown): string {
+  if (v == null) return "";
+  const s = String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+export async function exportReadingsCsv(days?: number): Promise<string> {
+  const db = getDb();
+  const base = db.select().from(weatherReadings);
+  const rows =
+    days && days > 0
+      ? await base.where(gte(weatherReadings.timestamp, new Date(Date.now() - days * 86400000))).orderBy(weatherReadings.timestamp)
+      : await base.orderBy(weatherReadings.timestamp);
+
+  const iso = (d: Date | null | undefined) => (d ? new Date(d).toISOString() : "");
+  const header = [
+    "timestamp", "temperature", "feels_like", "humidity", "wind_speed", "wind_deg", "pressure",
+    "clouds", "uvi", "visibility", "rain_1h", "pop", "aqi", "pm25", "pm10", "weather_desc",
+    "ai_predicted_rain", "ai_predicted_start_time", "ai_confidence", "ai_time_to_rain",
+    "actual_rain", "actual_rain_start", "validated",
+  ].join(",");
+
+  const lines = rows.map((r) =>
+    [
+      iso(r.timestamp), r.temperature, r.feelsLike, r.humidity, r.windSpeed, r.windDeg, r.pressure,
+      r.clouds, r.uvi, r.visibility, r.rain1h, r.pop, r.aqi, r.pm25, r.pm10, r.weatherDesc,
+      r.aiPredictedRain ? 1 : 0, iso(r.aiPredictedStartTime), r.aiConfidence, r.aiTimeToRain,
+      r.actualRain ? 1 : 0, iso(r.actualRainStart), r.validated ? 1 : 0,
+    ].map(csvCell).join(",")
+  );
+
+  return [header, ...lines].join("\n");
+}
 
 // Recent air-quality samples (oldest → newest) for the PM2.5 trend sparkline.
 export async function getAirQualityHistory(limit: number = 96) {

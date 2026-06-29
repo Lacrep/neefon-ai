@@ -11,34 +11,15 @@ export default function PredictionLog() {
     <div className="col-span-12 glass-card overflow-hidden">
       <div className="p-4 md:p-6 border-b border-slate-200 flex justify-between items-center">
         <h3 className="text-base md:text-lg font-semibold text-slate-900 font-heading">Prediction Logs</h3>
-        <button
-          onClick={() => {
-            const csv = [
-              ["timestamp", "predictedRain", "predictedTime", "confidence", "timeToRain", "actualRain", "validated"].join(","),
-              ...history.map((r) =>
-                [
-                  r.timestamp ? new Date(r.timestamp).toISOString() : "",
-                  r.predictedRain ? "true" : "false",
-                  r.predictedStartTime ? new Date(r.predictedStartTime).toISOString() : "",
-                  r.confidence,
-                  r.timeToRain ?? "",
-                  r.actualRain ? "true" : "false",
-                  r.validated ? "true" : "false",
-                ].join(",")
-              ),
-            ].join("\n");
-            const blob = new Blob([csv], { type: "text/csv" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `rain-predictions-${new Date().toISOString().split("T")[0]}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-          }}
+        {/* Downloads the FULL history from the server (not just the ~50 rows
+            shown here) — the route streams every stored reading as CSV. */}
+        <a
+          href="/api/export/readings.csv"
+          download
           className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white text-slate-700 hover:bg-slate-50 transition flex items-center gap-1 border border-slate-200"
         >
-          <span className="material-symbols-outlined text-[16px]">download</span> Export
-        </button>
+          <span className="material-symbols-outlined text-[16px]">download</span> Export ทั้งหมด (CSV)
+        </a>
       </div>
       <div className="overflow-x-auto max-h-96">
         <table className="w-full text-left border-collapse text-sm whitespace-nowrap">

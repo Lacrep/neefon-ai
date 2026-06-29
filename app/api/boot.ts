@@ -7,6 +7,7 @@ import { appRouter } from "./router";
 import { createContext } from "./context";
 import { env } from "./lib/env";
 import { startCollector } from "./lib/collector";
+import { exportReadingsCsv } from "./lib/aiEngine";
 
 // Collect weather + predictions 24/7 (server-side), independent of any open
 // browser tab — so data keeps accumulating as long as the server is running.
@@ -56,6 +57,27 @@ app.get("/api/webcam-image-proxy", async (c) => {
   } catch (error) {
     console.error("Image proxy error:", error);
     return c.json({ error: "Failed to fetch image" }, 500);
+  }
+});
+
+// Full data export (CSV) for offline accuracy analysis. ?days=30 limits the
+// range; no param = all history. Content-Disposition makes the browser download.
+app.get("/api/export/readings.csv", async (c) => {
+  try {
+    const daysParam = c.req.query("days");
+    const days = daysParam ? Number(daysParam) : undefined;
+    const csv = await exportReadingsCsv(Number.isFinite(days) ? days : undefined);
+    const stamp = new Date().toISOString().slice(0, 10);
+    return new Response(csv, {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="neefon-readings-${stamp}.csv"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch (err) {
+    console.error("CSV export error:", err);
+    return c.json({ error: "export failed" }, 500);
   }
 });
 
