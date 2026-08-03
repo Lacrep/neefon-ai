@@ -6,7 +6,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { appRouter } from "./router";
 import { createContext } from "./context";
 import { env } from "./lib/env";
-import { startCollector } from "./lib/collector";
+import { startCollector, getRainAlert } from "./lib/collector";
 import { exportReadingsCsv } from "./lib/aiEngine";
 
 // Collect weather + predictions 24/7 (server-side), independent of any open
@@ -79,6 +79,16 @@ app.get("/api/export/readings.csv", async (c) => {
     console.error("CSV export error:", err);
     return c.json({ error: "export failed" }, 500);
   }
+});
+
+// Robot rain alert — minimal JSON for an outdoor robot to poll:
+//   { goInside, isRainingNow, rainInMinutes, predictedTime, intensity, ... }
+// goInside=true means confident rain is coming (or falling) → head indoors.
+app.get("/api/alert", async (c) => {
+  const alert = await getRainAlert();
+  c.header("Cache-Control", "no-store");
+  c.header("Access-Control-Allow-Origin", "*");
+  return c.json(alert);
 });
 
 app.all("/api/*", (c) => c.json({ error: "Not Found" }, 404));

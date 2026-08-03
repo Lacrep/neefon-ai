@@ -106,6 +106,63 @@ async function runCycle(): Promise<void> {
   }
 }
 
+// ── Robot alert ──
+// A tiny, poll-friendly signal for the outdoor robot: "should I go inside, and
+// how many minutes until rain". Runs a fresh (60s-cached) prediction so the
+// robot always gets a live countdown without hammering the weather APIs.
+export interface RainAlert {
+  goInside: boolean;        // TRUE = rain confidently coming (or falling) → get indoors
+  isRainingNow: boolean;
+  rainInMinutes: number;    // minutes until rain starts (0 = now, -1 = no rain)
+  predictedTime: string | null; // Thai clock "HH.MM"
+  intensity: string;        // none | light | moderate | heavy | violent
+  confidencePercent: number;
+  updatedAt: string;
+  error?: string;
+}
+
+let alertCache: { at: number; data: RainAlert } | null = null;
+
+export async function getRainAlert(): Promise<RainAlert> {
+  if (alertCache && Date.now() - alertCache.at < 60_000) return alertCache.data;
+
+  const base: RainAlert = {
+    goInside: false, isRainingNow: false, rainInMinutes: -1, predictedTime: null,
+    intensity: "none", confidencePercent: 0, updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    const db = getDb();
+    const s = (await db.select().from(userSettings).limit(1))[0];
+    if (!s || !s.owmKey) return { ...base, error: "not configured" };
+
+    const { aiPrediction: ai } = await gatherWeather(
+      {
+        lat: Number(s.lat), lon: Number(s.lon), owmKey: s.owmKey,
+        tomorrowKey: s.tomorrowKey ?? undefined, windyKey: s.windyKey ?? undefined, geminiKey: s.geminiKey ?? undefined,
+      },
+      false
+    );
+    if (!ai) return { ...base, error: "no data" };
+
+    const pn = ai.precipNowcast;
+    const data: RainAlert = {
+      goInside: ai.willRain || ai.isRainingNow,
+      isRainingNow: ai.isRainingNow,
+      rainInMinutes: ai.willRain ? ai.timeToRainMinutes : -1,
+      predictedTime: ai.willRain ? ai.predictedStartTime : null,
+      intensity: pn ? (pn.isRainingNow ? pn.currentIntensity : pn.peakIntensity) : "none",
+      confidencePercent: ai.confidencePercent,
+      updatedAt: new Date().toISOString(),
+    };
+    alertCache = { at: Date.now(), data };
+    return data;
+  } catch (err) {
+    console.error("[alert] failed:", err);
+    return { ...base, error: "internal error" };
+  }
+}
+
 export function startCollector(): void {
   const g = globalThis as unknown as { __neefonCollector?: ReturnType<typeof setInterval> };
   if (g.__neefonCollector) return; // already running (survives HMR re-imports)

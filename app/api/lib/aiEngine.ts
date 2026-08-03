@@ -86,7 +86,7 @@ function rateToIntensity(mmPerHr: number): Intensity {
 function buildPrecipNowcast(minutely: MinutelyData[], currentRainMm: number, now: number): PrecipNowcast {
   const empty: PrecipNowcast = {
     available: false, stepMinutes: 15, horizonMinutes: 0, isRainingNow: false,
-    startsInMin: -1, stopsInMin: -1, durationMin: 0,
+    startsInMin: -1, confidentStartsInMin: -1, stopsInMin: -1, durationMin: 0,
     currentIntensity: "none", peakIntensity: "none", headline: "", points: [], source: "none",
   };
   if (!minutely.length) return empty;
@@ -113,6 +113,27 @@ function buildPrecipNowcast(minutely: MinutelyData[], currentRainMm: number, now
   else {
     const first = points.find((p) => p.t >= 0 && p.intensity !== "none");
     if (first) startsInMin = first.t;
+  }
+
+  // CONFIDENT onset = start of a SUSTAINED run of real rain — this is what
+  // drives the robot alert. Requiring several consecutive minutes above a real-
+  // rain rate filters out single-minute traces/model noise that never
+  // materialise (the main source of false alarms). ~3 min of ≥0.3 mm/h.
+  const ONSET_MM_H = 0.3;
+  const minRun = Math.max(1, Math.ceil(3 / stepMin));
+  let confidentStartsInMin = -1;
+  if (isRainingNow) {
+    confidentStartsInMin = 0;
+  } else {
+    for (let i = 0; i < points.length; i++) {
+      if (points[i].t < 0 || points[i].mmPerHr < ONSET_MM_H) continue;
+      let run = 0;
+      for (let j = i; j < points.length && points[j].mmPerHr >= ONSET_MM_H; j++) run++;
+      if (run >= minRun) {
+        confidentStartsInMin = points[i].t;
+        break;
+      }
+    }
   }
 
   let stopsInMin = -1;
@@ -158,6 +179,7 @@ function buildPrecipNowcast(minutely: MinutelyData[], currentRainMm: number, now
     horizonMinutes,
     isRainingNow,
     startsInMin,
+    confidentStartsInMin,
     stopsInMin,
     durationMin,
     currentIntensity,
@@ -869,24 +891,20 @@ export async function runAIPrediction(
   }
   let willRain = rainProb >= effectiveThreshold;
 
-  // ── Nowcast-led warning gate (Rainbow-style: only warn when confident) ──────
-  // The minute-level precip feed is the ground truth for the near term. It
-  // PROMOTES a confident warning when it actually detects rain approaching, and
-  // CANCELS a forecast warning that falls inside its window while it reads dry —
-  // killing the "it warned but no rain came" false alarms the user reported.
+  // ── Robot-grade warning gate: alert ONLY on confident real rain ─────────────
+  // This app drives a "get the robot indoors before it rains" alarm, so a false
+  // alarm is costly and precision matters far more than catching a light drizzle
+  // via a fuzzy hourly forecast. When the minute-level radar-nowcast is
+  // available it is the SOLE authority: warn iff it's raining now OR it detects
+  // a SUSTAINED real-rain onset (confidentStartsInMin). Everything else = safe.
   if (precipNowcast.available) {
-    if (precipNowcast.isRainingNow || precipNowcast.startsInMin >= 0) {
-      willRain = true;
-      timeToRain = precipNowcast.isRainingNow ? 0 : precipNowcast.startsInMin;
-      rainProb = Math.max(rainProb, 0.9);
-    } else if (timeToRain <= precipNowcast.horizonMinutes) {
-      // Forecast wanted to warn within the window the minute feed says is dry.
-      willRain = false;
-    }
+    willRain = precipNowcast.isRainingNow || precipNowcast.confidentStartsInMin >= 0;
+    timeToRain = willRain ? (precipNowcast.isRainingNow ? 0 : precipNowcast.confidentStartsInMin) : 999;
+    if (willRain) rainProb = Math.max(rainProb, 0.9);
   }
 
   // No speculative clock times: only show a predicted time when we are actually
-  // warning. (Removes the "คาดว่าฝนอาจตกตอน HH:MM" guesses the user found noisy.)
+  // warning. (Removes the "คาดว่าฝนอาจตกตอน HH:MM" guesses.)
   if (!willRain) timeToRain = 999;
 
   // ── Verdict confidence: how sure we are of the rain / no-rain call ──

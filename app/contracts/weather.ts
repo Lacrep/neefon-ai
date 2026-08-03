@@ -96,7 +96,8 @@ export const PrecipNowcastSchema = z.object({
   stepMinutes: z.number(),       // resolution of each point (e.g. 15)
   horizonMinutes: z.number(),    // how far ahead the timeline reaches
   isRainingNow: z.boolean(),
-  startsInMin: z.number(),       // -1 = no rain in window, 0 = now/already raining
+  startsInMin: z.number(),       // -1 = no rain in window, 0 = now — ANY precip incl. traces
+  confidentStartsInMin: z.number().default(-1), // sustained REAL rain onset (drives the alert)
   stopsInMin: z.number(),        // -1 = rain continues beyond the window
   durationMin: z.number(),       // length of the upcoming/current rain episode
   currentIntensity: IntensityEnum,
