@@ -23,15 +23,27 @@ function resolveDbPath(): string {
 }
 
 let instance: ReturnType<typeof drizzle<typeof fullSchema>>;
+let rawSqlite: Database.Database;
 
-export function getDb() {
+function ensure() {
   if (!instance) {
     const dbPath = resolveDbPath();
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    const sqlite = new Database(dbPath);
-    sqlite.pragma("journal_mode = WAL");
-    sqlite.pragma("foreign_keys = ON");
-    instance = drizzle(sqlite, { schema: fullSchema });
+    rawSqlite = new Database(dbPath);
+    rawSqlite.pragma("journal_mode = WAL");
+    rawSqlite.pragma("foreign_keys = ON");
+    instance = drizzle(rawSqlite, { schema: fullSchema });
   }
+}
+
+export function getDb() {
+  ensure();
   return instance;
+}
+
+// Raw better-sqlite3 handle — for the push tables (created ad-hoc with
+// CREATE TABLE IF NOT EXISTS so they need no drizzle migration on the VM).
+export function getRawDb(): Database.Database {
+  ensure();
+  return rawSqlite;
 }

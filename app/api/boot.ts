@@ -8,6 +8,7 @@ import { createContext } from "./context";
 import { env } from "./lib/env";
 import { startCollector, getRainAlert } from "./lib/collector";
 import { exportReadingsCsv } from "./lib/aiEngine";
+import { getVapidPublicKey, saveSubscription } from "./lib/push";
 
 // Collect weather + predictions 24/7 (server-side), independent of any open
 // browser tab — so data keeps accumulating as long as the server is running.
@@ -89,6 +90,23 @@ app.get("/api/alert", async (c) => {
   c.header("Cache-Control", "no-store");
   c.header("Access-Control-Allow-Origin", "*");
   return c.json(alert);
+});
+
+// ── Web Push (PWA phone notifications) ──
+app.get("/api/push/vapid", (c) => c.json({ publicKey: getVapidPublicKey() }));
+
+app.post("/api/push/subscribe", async (c) => {
+  try {
+    const sub = await c.req.json();
+    if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) {
+      return c.json({ error: "invalid subscription" }, 400);
+    }
+    saveSubscription(sub);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("subscribe error:", err);
+    return c.json({ error: "failed" }, 500);
+  }
 });
 
 app.all("/api/*", (c) => c.json({ error: "Not Found" }, 404));

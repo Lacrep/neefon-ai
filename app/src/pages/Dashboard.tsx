@@ -1,6 +1,7 @@
 import Sidebar from "@/components/Sidebar";
 import BottomNav from "@/components/BottomNav";
 import HeaderBar from "@/components/HeaderBar";
+import PushToggle from "@/components/PushToggle";
 import AIPredictionHero from "@/components/AIPredictionHero";
 import WeatherHero from "@/components/WeatherHero";
 import QuickMetrics from "@/components/QuickMetrics";
@@ -28,6 +29,9 @@ export default function Dashboard() {
 
         {/* Bento Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* Push-notification opt-in banner (hidden once enabled) */}
+          <PushToggle />
+
           {/* AI Prediction Hero + Current Temperature */}
           <AIPredictionHero />
           <WeatherHero />

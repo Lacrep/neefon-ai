@@ -4,6 +4,7 @@ import { analyzeSky } from "./skyVision";
 import { getDb } from "../queries/connection";
 import { userSettings } from "@db/schema";
 import type { AIPrediction, AirQuality, CurrentWeather, HourlyForecast } from "@contracts/weather";
+import { pushRainAlert } from "./push";
 
 export interface GatherInput {
   lat: number;
@@ -89,7 +90,7 @@ async function runCycle(): Promise<void> {
     const rows = await db.select().from(userSettings).limit(1);
     const s = rows[0];
     if (!s || !s.owmKey) return; // not configured yet — nothing to collect
-    await gatherWeather(
+    const { aiPrediction } = await gatherWeather(
       {
         lat: Number(s.lat),
         lon: Number(s.lon),
@@ -101,6 +102,8 @@ async function runCycle(): Promise<void> {
       true
     );
     console.log(`[collector] reading stored @ ${new Date().toISOString()}`);
+    // Fire phone push notifications on rain-state transitions.
+    await pushRainAlert(alertFromPrediction(aiPrediction));
   } catch (err) {
     console.error("[collector] cycle failed:", err);
   }
@@ -116,9 +119,32 @@ export interface RainAlert {
   rainInMinutes: number;    // minutes until rain starts (0 = now, -1 = no rain)
   predictedTime: string | null; // Thai clock "HH.MM"
   intensity: string;        // none | light | moderate | heavy | violent
+  stopsInMin: number;       // minutes until the rain stops (-1 = beyond window)
+  durationMin: number;      // expected length of the rain episode
   confidencePercent: number;
   updatedAt: string;
   error?: string;
+}
+
+function alertFromPrediction(ai: AIPrediction | null): RainAlert {
+  const base: RainAlert = {
+    goInside: false, isRainingNow: false, rainInMinutes: -1, predictedTime: null,
+    intensity: "none", stopsInMin: -1, durationMin: 0, confidencePercent: 0,
+    updatedAt: new Date().toISOString(),
+  };
+  if (!ai) return base;
+  const pn = ai.precipNowcast;
+  return {
+    goInside: ai.willRain || ai.isRainingNow,
+    isRainingNow: ai.isRainingNow,
+    rainInMinutes: ai.willRain ? ai.timeToRainMinutes : -1,
+    predictedTime: ai.willRain ? ai.predictedStartTime : null,
+    intensity: pn ? (pn.isRainingNow ? pn.currentIntensity : pn.peakIntensity) : "none",
+    stopsInMin: pn?.stopsInMin ?? -1,
+    durationMin: pn?.durationMin ?? 0,
+    confidencePercent: ai.confidencePercent,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 let alertCache: { at: number; data: RainAlert } | null = null;
@@ -128,7 +154,7 @@ export async function getRainAlert(): Promise<RainAlert> {
 
   const base: RainAlert = {
     goInside: false, isRainingNow: false, rainInMinutes: -1, predictedTime: null,
-    intensity: "none", confidencePercent: 0, updatedAt: new Date().toISOString(),
+    intensity: "none", stopsInMin: -1, durationMin: 0, confidencePercent: 0, updatedAt: new Date().toISOString(),
   };
 
   try {
@@ -145,16 +171,7 @@ export async function getRainAlert(): Promise<RainAlert> {
     );
     if (!ai) return { ...base, error: "no data" };
 
-    const pn = ai.precipNowcast;
-    const data: RainAlert = {
-      goInside: ai.willRain || ai.isRainingNow,
-      isRainingNow: ai.isRainingNow,
-      rainInMinutes: ai.willRain ? ai.timeToRainMinutes : -1,
-      predictedTime: ai.willRain ? ai.predictedStartTime : null,
-      intensity: pn ? (pn.isRainingNow ? pn.currentIntensity : pn.peakIntensity) : "none",
-      confidencePercent: ai.confidencePercent,
-      updatedAt: new Date().toISOString(),
-    };
+    const data = alertFromPrediction(ai);
     alertCache = { at: Date.now(), data };
     return data;
   } catch (err) {
