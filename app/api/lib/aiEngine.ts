@@ -106,7 +106,12 @@ function buildPrecipNowcast(minutely: MinutelyData[], currentRainMm: number, now
   if (!points.length) return empty;
 
   const horizonMinutes = points[points.length - 1].t + stepMin;
-  const isRainingNow = currentRainMm > 0.1 || (points[0].t <= 0 && points[0].intensity !== "none");
+  // "Raining now" needs LIVE minute-level precip. OWM's `rain.1h` is a trailing
+  // 1-hour accumulation — it can be a shower that already stopped (and it often
+  // disagrees with the model feed), so it only corroborates, never triggers alone.
+  const nowPoint = points.find((p) => p.t >= -stepMin && p.t <= stepMin);
+  const nowRate = nowPoint?.mmPerHr ?? 0;
+  const isRainingNow = nowRate >= 0.3 || (currentRainMm > 0.5 && nowRate >= 0.1);
 
   let startsInMin = -1;
   if (isRainingNow) startsInMin = 0;
@@ -737,9 +742,10 @@ export async function runAIPrediction(
 
   weights = weights ?? { trend: 0.35, pattern: 0.30, rateOfChange: 0.20, climate: 0.15 };
 
-  // Check if it's already raining
-  const currentRain = current.rain1h ?? 0;
-  if (currentRain > 0.5) {
+  // Already raining? Only if a LIVE signal confirms it — the minute feed showing
+  // current precip (precipNowcast.isRainingNow, now corroborated) or the webcam
+  // actually seeing rain. NOT OWM's trailing rain.1h alone (false-alarm source).
+  if (precipNowcast.isRainingNow || opts?.sky?.isRaining === true) {
     const now = new Date();
     return {
       willRain: true,
@@ -898,9 +904,36 @@ export async function runAIPrediction(
   // available it is the SOLE authority: warn iff it's raining now OR it detects
   // a SUSTAINED real-rain onset (confidentStartsInMin). Everything else = safe.
   if (precipNowcast.available) {
-    willRain = precipNowcast.isRainingNow || precipNowcast.confidentStartsInMin >= 0;
-    timeToRain = willRain ? (precipNowcast.isRainingNow ? 0 : precipNowcast.confidentStartsInMin) : 999;
-    if (willRain) rainProb = Math.max(rainProb, 0.9);
+    const onset = precipNowcast.confidentStartsInMin;
+    let confident: boolean = precipNowcast.isRainingNow;
+    if (!confident && onset >= 0) {
+      // A ~1-min feed is a real RADAR nowcast (OWM One Call) → trust it. A coarse
+      // ≥5-min feed is Open-Meteo's MODEL, which over-predicts light convective
+      // rain in Thailand — so require the hourly probability to CORROBORATE
+      // (POP ≥ 70% at the onset time) before alerting a robot. This kills the
+      // "model forecast a 0.3 mm drizzle at 50% POP that never came" false alarm.
+      const isRadar = precipNowcast.stepMinutes <= 2;
+      const targetMs = Date.now() + onset * 60000;
+      let pop = hourly[0]?.pop ?? 0;
+      for (const h of hourly) {
+        const start = h.dt * 1000;
+        if (targetMs >= start && targetMs < start + 3_600_000) {
+          pop = h.pop ?? 0;
+          break;
+        }
+      }
+      confident = isRadar || pop >= 0.7;
+    }
+    willRain = confident;
+    timeToRain = confident ? (precipNowcast.isRainingNow ? 0 : onset) : 999;
+    if (confident) rainProb = Math.max(rainProb, 0.9);
+    else {
+      // Not warning → don't let a single model drizzle inflate the shown "%
+      // chance" (intensityProb pushes it to ~80%). Cap it to the model's own
+      // hourly probability so "สภาพอากาศปลอดภัย · โอกาส 53%" is honest.
+      const maxHourlyPop = hourly.reduce((m, h) => Math.max(m, h.pop ?? 0), 0);
+      rainProb = Math.min(rainProb, maxHourlyPop);
+    }
   }
 
   // No speculative clock times: only show a predicted time when we are actually

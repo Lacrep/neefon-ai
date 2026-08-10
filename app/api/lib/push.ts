@@ -17,8 +17,11 @@ function init(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS push_config (id INTEGER PRIMARY KEY CHECK (id = 1), vapid_public TEXT, vapid_private TEXT);
     CREATE TABLE IF NOT EXISTS push_subscriptions (endpoint TEXT PRIMARY KEY, p256dh TEXT, auth TEXT, created_at INTEGER);
-    CREATE TABLE IF NOT EXISTS push_state (id INTEGER PRIMARY KEY CHECK (id = 1), stage TEXT, updated_at INTEGER);
+    CREATE TABLE IF NOT EXISTS push_state (id INTEGER PRIMARY KEY CHECK (id = 1), stage TEXT, candidate TEXT, candidate_count INTEGER, updated_at INTEGER);
   `);
+  // Add debounce columns to a push_state created by an older build.
+  try { db.exec("ALTER TABLE push_state ADD COLUMN candidate TEXT"); } catch { /* exists */ }
+  try { db.exec("ALTER TABLE push_state ADD COLUMN candidate_count INTEGER"); } catch { /* exists */ }
 
   let cfg = db.prepare("SELECT vapid_public AS pub, vapid_private AS priv FROM push_config WHERE id = 1").get() as
     | { pub: string; priv: string }
@@ -71,20 +74,48 @@ async function sendToAll(payload: Record<string, unknown>): Promise<void> {
   );
 }
 
-// Fired by the collector each cycle. Notifies only on STAGE TRANSITIONS
-// (clear → incoming → raining → clear) so the phone isn't spammed every 3 min.
+function setState(stage: string, candidate: string | null, count: number): void {
+  getRawDb()
+    .prepare(
+      "INSERT INTO push_state (id, stage, candidate, candidate_count, updated_at) VALUES (1, ?, ?, ?, ?) " +
+        "ON CONFLICT(id) DO UPDATE SET stage = excluded.stage, candidate = excluded.candidate, candidate_count = excluded.candidate_count, updated_at = excluded.updated_at"
+    )
+    .run(stage, candidate, count, Date.now());
+}
+
+// Fired by the collector each cycle. Only notifies on CONFIRMED stage
+// transitions. Because the free Open-Meteo model flip-flops between cycles
+// ("rain at +50min" one cycle, "clear" the next), a forecast-based "incoming"
+// must PERSIST for 2 consecutive cycles (~6 min) before we buzz the phone —
+// this kills the repeated false alarms. Live-confirmed "raining"/"clear" fire
+// immediately.
 export async function pushRainAlert(alert: RainAlert): Promise<void> {
   init();
   const db = getRawDb();
   if (subscriptionCount() === 0) return;
 
   const stage = alert.isRainingNow ? "raining" : alert.goInside ? "incoming" : "clear";
-  const prev = (db.prepare("SELECT stage FROM push_state WHERE id = 1").get() as { stage: string } | undefined)?.stage ?? "clear";
-  if (stage === prev) return; // no transition → nothing to announce
+  const row = db.prepare("SELECT stage, candidate, candidate_count FROM push_state WHERE id = 1").get() as
+    | { stage: string; candidate: string | null; candidate_count: number | null }
+    | undefined;
+  const confirmed = row?.stage ?? "clear";
 
+  if (stage === confirmed) {
+    if (row?.candidate) setState(confirmed, null, 0); // clear any pending flip
+    return;
+  }
+
+  // Debounce: a forecast-only "incoming" must repeat before it counts.
+  const required = stage === "incoming" ? 2 : 1;
+  const count = (row?.candidate === stage ? row?.candidate_count ?? 0 : 0) + 1;
+  if (count < required) {
+    setState(confirmed, stage, count); // pending confirmation
+    return;
+  }
+
+  // Confirmed transition → build the message and notify.
   const th: Record<string, string> = { light: "ฝนเบา", moderate: "ฝนปานกลาง", heavy: "ฝนหนัก", violent: "ฝนหนักมาก", none: "ฝน" };
   const lvl = th[alert.intensity] ?? "ฝน";
-
   let title = "";
   let bodyText = "";
   if (stage === "incoming") {
@@ -94,16 +125,13 @@ export async function pushRainAlert(alert: RainAlert): Promise<void> {
     title = `☔ ฝนเริ่มตกแล้ว (${lvl})`;
     bodyText = alert.stopsInMin >= 0 ? `คาดว่าจะหยุดในอีก ~${alert.stopsInMin} นาที` : "ตกต่อเนื่อง";
   } else {
-    // raining/incoming → clear
-    if (prev !== "raining") {
-      // incoming that never materialised → stay quiet, just record the state
-      db.prepare("INSERT INTO push_state (id, stage, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET stage = excluded.stage, updated_at = excluded.updated_at").run(stage, Date.now());
-      return;
-    }
+    // → clear. Only announce "stopped" if we were actually raining.
+    setState(stage, null, 0);
+    if (confirmed !== "raining") return;
     title = "🌤️ ฝนหยุดแล้ว";
     bodyText = "สภาพอากาศปลอดภัย ออกทำงานต่อได้";
   }
 
-  db.prepare("INSERT INTO push_state (id, stage, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET stage = excluded.stage, updated_at = excluded.updated_at").run(stage, Date.now());
+  setState(stage, null, 0);
   await sendToAll({ title, body: bodyText, tag: "neefon-rain", ...alert });
 }
