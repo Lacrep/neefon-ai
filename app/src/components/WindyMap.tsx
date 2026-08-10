@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useSettings } from "@/contexts/SettingsContext";
+import { useLocation } from "@/contexts/LocationContext";
 
 const overlays = [
   { key: "rain", label: "ฝน", icon: "water_drop" },
@@ -20,12 +20,12 @@ const overlays = [
 ];
 
 export default function WindyMap() {
-  const { settings } = useSettings();
+  const { lat: uLat, lon: uLon } = useLocation();
   const [currentOverlay, setCurrentOverlay] = useState("rain");
   const [zoom, setZoom] = useState(15);
 
-  const lat = settings.lat ?? 13.7563;
-  const lon = settings.lon ?? 100.5018;
+  const lat = uLat ?? 13.7563;
+  const lon = uLon ?? 100.5018;
 
   const buildUrl = useCallback(() => {
     const ovl = currentOverlay;

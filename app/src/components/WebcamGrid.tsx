@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/providers/trpc";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useLocation } from "@/contexts/LocationContext";
 import LiveWebcam from "@/components/LiveWebcam";
 
 interface Webcam {
@@ -18,12 +19,13 @@ interface Webcam {
 
 export default function WebcamGrid() {
   const { settings } = useSettings();
+  const { lat, lon } = useLocation();
   const [selectedWebcam, setSelectedWebcam] = useState<Webcam | null>(null);
 
   const webcamQuery = trpc.webcam.getNearby.useQuery(
     {
-      lat: settings.lat ?? 13.7563,
-      lon: settings.lon ?? 100.5018,
+      lat: lat ?? 13.7563,
+      lon: lon ?? 100.5018,
       radius: settings.webcamRadius ?? 20,
       apiKey: settings.windyKey ?? "",
     },

@@ -1,6 +1,7 @@
 import { createContext, useContext, useCallback, type ReactNode } from "react";
 import { trpc } from "@/providers/trpc";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useLocation } from "@/contexts/LocationContext";
 import type { AIPrediction, AirQuality, CurrentWeather, HourlyForecast } from "@contracts/weather";
 
 interface WeatherContextValue {
@@ -18,12 +19,13 @@ const WeatherContext = createContext<WeatherContextValue | null>(null);
 
 export function WeatherProvider({ children }: { children: ReactNode }) {
   const { settings } = useSettings();
+  const { lat, lon } = useLocation(); // "locked" (factory) or "follow" (phone GPS)
   const utils = trpc.useUtils();
 
   const weatherQuery = trpc.weather.getCurrent.useQuery(
     {
-      lat: settings.lat,
-      lon: settings.lon,
+      lat,
+      lon,
       owmKey: settings.owmKey,
       tomorrowKey: settings.tomorrowKey,
       windyKey: settings.windyKey,

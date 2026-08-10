@@ -1,9 +1,11 @@
-import { Link, useLocation } from "react-router";
+import { Link, useLocation as useRoute } from "react-router";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useLocation as useGeo } from "@/contexts/LocationContext";
 
 export default function Sidebar() {
-  const location = useLocation();
+  const location = useRoute();
   const { settings } = useSettings();
+  const geo = useGeo();
 
   const navItems = [
     { path: "/", label: "Dashboard", icon: "dashboard" },
@@ -59,8 +61,12 @@ export default function Sidebar() {
       {/* Location info */}
       <div className="p-4 border-t border-white/10 mt-auto">
         <div className="flex items-center gap-2 text-white/45 text-xs">
-          <span className="material-symbols-outlined text-[16px] shrink-0">location_on</span>
-          <span className="hidden md:inline truncate">{settings.locationName || "กรุงเทพฯ"}</span>
+          <span className="material-symbols-outlined text-[16px] shrink-0">
+            {geo.following ? "my_location" : "location_on"}
+          </span>
+          <span className="hidden md:inline truncate">
+            {geo.mode === "follow" ? (geo.following ? "ตำแหน่งปัจจุบัน (GPS)" : "กำลังหาตำแหน่ง...") : settings.locationName || "กรุงเทพฯ"}
+          </span>
         </div>
       </div>
     </aside>

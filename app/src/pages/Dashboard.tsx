@@ -1,6 +1,7 @@
 import Sidebar from "@/components/Sidebar";
 import BottomNav from "@/components/BottomNav";
 import HeaderBar from "@/components/HeaderBar";
+import LocationToggle from "@/components/LocationToggle";
 import PushToggle from "@/components/PushToggle";
 import AIPredictionHero from "@/components/AIPredictionHero";
 import WeatherHero from "@/components/WeatherHero";
@@ -29,6 +30,9 @@ export default function Dashboard() {
 
         {/* Bento Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          {/* Location mode: locked (factory/robot) vs follow phone GPS */}
+          <LocationToggle />
+
           {/* Push-notification opt-in banner (hidden once enabled) */}
           <PushToggle />
 
