@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { enablePush, isIos, isStandalone, pushStatus, pushSupported, type PushStatus } from "@/lib/push";
+import { useLocation } from "@/contexts/LocationContext";
 
 export default function PushToggle() {
   const [status, setStatus] = useState<PushStatus>(() => pushStatus());
   const [standalone] = useState(() => isStandalone());
   const [busy, setBusy] = useState(false);
+  const { mode, lat, lon } = useLocation();
 
   // Already subscribed → nothing to show.
   if (status === "granted") return null;
@@ -43,14 +45,17 @@ export default function PushToggle() {
         <span className="material-symbols-outlined text-[#005eb2]">notifications_active</span>
         <div className="text-sm">
           <p className="font-semibold text-slate-900">รับแจ้งเตือนก่อนฝนตก</p>
-          <p className="text-xs text-slate-500">เด้งเตือนเมื่อฝนกำลังจะมา · ฝนเริ่มตก · และเมื่อหยุด</p>
+          <p className="text-xs text-slate-500">
+            เด้งเตือนเมื่อฝนกำลังจะมา · ฝนเริ่มตก · และเมื่อหยุด
+            <span className="text-[#005eb2]"> · จะเตือนตาม{mode === "follow" ? "ตำแหน่งมือถือ" : "ตำแหน่งที่ล็อก"}</span>
+          </p>
         </div>
       </div>
       <button
         disabled={busy}
         onClick={async () => {
           setBusy(true);
-          const r = await enablePush();
+          const r = await enablePush(mode, mode === "follow" ? lat : null, mode === "follow" ? lon : null);
           setStatus(pushStatus());
           setBusy(false);
           if (!r.ok && r.reason === "denied") alert("กรุณาอนุญาตการแจ้งเตือนในเบราว์เซอร์");

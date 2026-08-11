@@ -32,7 +32,17 @@ export function isIos(): boolean {
   return /iphone|ipad|ipod/i.test(navigator.userAgent);
 }
 
-export async function enablePush(): Promise<{ ok: boolean; reason?: string }> {
+export type NotifyMode = "locked" | "follow";
+
+async function postSubscription(sub: PushSubscription, mode: NotifyMode, lat: number | null, lon: number | null): Promise<void> {
+  await fetch("/api/push/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ subscription: sub, mode, lat, lon }),
+  });
+}
+
+export async function enablePush(mode: NotifyMode, lat: number | null, lon: number | null): Promise<{ ok: boolean; reason?: string }> {
   if (!pushSupported()) return { ok: false, reason: "unsupported" };
   const perm = await Notification.requestPermission();
   if (perm !== "granted") return { ok: false, reason: "denied" };
@@ -46,14 +56,23 @@ export async function enablePush(): Promise<{ ok: boolean; reason?: string }> {
         applicationServerKey: urlBase64ToUint8Array(publicKey) as BufferSource,
       });
     }
-    await fetch("/api/push/subscribe", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(sub),
-    });
+    await postSubscription(sub, mode, lat, lon);
     return { ok: true };
   } catch (err) {
     console.error("enablePush failed", err);
     return { ok: false, reason: "error" };
+  }
+}
+
+// Update the existing subscription's mode/location (no permission prompt).
+// No-op unless notifications are already granted + subscribed.
+export async function syncSubscription(mode: NotifyMode, lat: number | null, lon: number | null): Promise<void> {
+  if (pushStatus() !== "granted") return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) await postSubscription(sub, mode, lat, lon);
+  } catch (err) {
+    console.warn("syncSubscription failed", err);
   }
 }

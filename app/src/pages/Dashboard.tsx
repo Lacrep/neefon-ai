@@ -3,6 +3,7 @@ import BottomNav from "@/components/BottomNav";
 import HeaderBar from "@/components/HeaderBar";
 import LocationToggle from "@/components/LocationToggle";
 import PushToggle from "@/components/PushToggle";
+import PushLocationSync from "@/components/PushLocationSync";
 import AIPredictionHero from "@/components/AIPredictionHero";
 import WeatherHero from "@/components/WeatherHero";
 import QuickMetrics from "@/components/QuickMetrics";
@@ -98,6 +99,9 @@ export default function Dashboard() {
 
       {/* Settings Panel Modal */}
       <SettingsPanel />
+
+      {/* Keeps the push subscription's target location in sync (renders null) */}
+      <PushLocationSync />
 
       {/* Mobile bottom navigation */}
       <BottomNav />

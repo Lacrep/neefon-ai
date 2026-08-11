@@ -4,7 +4,7 @@ import { analyzeSky } from "./skyVision";
 import { getDb } from "../queries/connection";
 import { userSettings } from "@db/schema";
 import type { AIPrediction, AirQuality, CurrentWeather, HourlyForecast } from "@contracts/weather";
-import { pushRainAlert } from "./push";
+import { pushToAllSubscribers } from "./push";
 
 export interface GatherInput {
   lat: number;
@@ -102,8 +102,18 @@ async function runCycle(): Promise<void> {
       true
     );
     console.log(`[collector] reading stored @ ${new Date().toISOString()}`);
-    // Fire phone push notifications on rain-state transitions.
-    await pushRainAlert(alertFromPrediction(aiPrediction));
+    // Phone push: "locked" subs use the factory alert; "follow" subs get an
+    // alert computed for their own last-known location.
+    await pushToAllSubscribers(alertFromPrediction(aiPrediction), async (plat, plon) => {
+      const r = await gatherWeather(
+        {
+          lat: plat, lon: plon, owmKey: s.owmKey!,
+          tomorrowKey: s.tomorrowKey ?? undefined, windyKey: s.windyKey ?? undefined, geminiKey: s.geminiKey ?? undefined,
+        },
+        false
+      );
+      return alertFromPrediction(r.aiPrediction);
+    });
   } catch (err) {
     console.error("[collector] cycle failed:", err);
   }

@@ -97,11 +97,15 @@ app.get("/api/push/vapid", (c) => c.json({ publicKey: getVapidPublicKey() }));
 
 app.post("/api/push/subscribe", async (c) => {
   try {
-    const sub = await c.req.json();
+    const body = await c.req.json();
+    const sub = body?.subscription ?? body; // accept {subscription, mode, lat, lon} or a bare subscription
     if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) {
       return c.json({ error: "invalid subscription" }, 400);
     }
-    saveSubscription(sub);
+    const mode = body?.mode === "follow" ? "follow" : "locked";
+    const lat = typeof body?.lat === "number" ? body.lat : null;
+    const lon = typeof body?.lon === "number" ? body.lon : null;
+    saveSubscription(sub, mode, mode === "follow" ? lat : null, mode === "follow" ? lon : null);
     return c.json({ ok: true });
   } catch (err) {
     console.error("subscribe error:", err);
